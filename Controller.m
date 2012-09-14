@@ -68,8 +68,8 @@ Copyright (C) 2010 Apple Inc. All Rights Reserved.
 #pragma mark Utilities
 
 // Simple helper to twiddle bits in a uint32_t. 
- uint32_t ChangeBits(uint32_t currentBits, uint32_t flagsToChange, BOOL setFlags);
- uint32_t ChangeBits(uint32_t currentBits, uint32_t flagsToChange, BOOL setFlags)
+inline uint32_t ChangeBits(uint32_t currentBits, uint32_t flagsToChange, BOOL setFlags);
+inline uint32_t ChangeBits(uint32_t currentBits, uint32_t flagsToChange, BOOL setFlags)
 {
 	if(setFlags)
 	{	// Set Bits
@@ -170,6 +170,150 @@ void WindowListApplierFunction(const void *inputDictionary, void *context)
 	}
 }
 
+static NSMutableArray * windowRects;
+static NSMutableArray * photoWindows;
+- (BOOL) isPixelClear:(NSPoint) p {
+    
+	for (NSValue * v in windowRects) {
+        NSRect r = [v rectValue];
+		if (NSPointInRect(p, r))
+		{
+			return 0;
+		}
+	}
+	return 1;
+}
+- (bool) goodRect: (NSRect) rect {
+    if (rect.origin.x + rect.size.width > 1440 ||
+        rect.origin.y + rect.size.height > 900) {
+        return  0;
+    }
+    for (NSValue * v in windowRects) {
+        NSRect r = [v rectValue];
+        if (NSIntersectsRect(r, rect)) {
+            return 0;
+        }
+	}
+	return 1;
+}
+- (NSRect) bestRectWithOriginLine:(NSRect) r {
+    
+    
+    NSRect best = NSZeroRect;
+    NSRect current = NSZeroRect;
+    current.origin.x = r.origin.x;
+    current.origin.y = r.origin.y;
+    int x;
+    //for each starting pixel
+    for (x = r.origin.x; x < r.origin.x + r.size.width; x++) {
+        current.origin.x = x;
+        current.size.width = 0;
+        current.size.width = 0;
+
+        current.size.width = 0;
+        current.size.height = 0;
+        int wfail = 0;
+        int hfail = 0;
+
+        while (1) {
+            current.size.width++;
+            if (wfail || ![self goodRect:current]) {
+                current.size.width--;
+                wfail = 1;
+            }
+            current.size.height++;
+            if (hfail || ![self goodRect:current]) {
+                current.size.height--;
+                hfail = 1;
+            }
+            
+            if (hfail && wfail) {
+                break;
+            }
+        }
+        if (current.size.width * current.size.height > best.size.width * best.size.height) {
+            best = current;
+        }
+    }
+    
+    return best;
+}
+- (void) checkForFreeSpace {
+    int totalwidth = 1440;
+    int totalheight = 900;
+    NSRect best = NSMakeRect(0, 0, 0, 0);
+    NSRect current;
+    int y;
+    int x;
+// for each row
+//
+    for (y = 0; y < totalheight; ++y) {
+        current.origin.x = 0;
+        current.origin.y = y;
+        current.size.width = 0;
+        current.size.height = 0;
+        for (x = 0; x < totalwidth; ++x)
+        {
+            if ([self isPixelClear: NSMakePoint(x, y)])
+            {
+                current.size.width++;
+                if (current.size.width > best.size.width)
+                {
+                    best = current;
+                }
+            } else {
+                current.origin.x = x + 1;
+                current.size.width = 0;
+            }
+                
+        }
+
+    }
+    
+    NSRect realBest = [self bestRectWithOriginLine:best];
+    
+    NSWindow * w = [[NSWindow alloc] initWithContentRect:NSZeroRect
+                                styleMask:NSBorderlessWindowMask
+                                  backing:NSBackingStoreRetained defer:NO];
+    [w makeKeyAndOrderFront:w];
+    [windowRects addObject:[NSValue valueWithRect:realBest]];
+    realBest.origin.y = 900 - realBest.origin.y - realBest.size.height;
+    [w setFrame:realBest display:YES];
+//    NSImageView * im = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, w.frame.size.width, w.frame.size.height)];
+//    [[w contentView] addSubview:im];
+//    [im setImage:[NSImage imageNamed:@"Fin.jpg"]];
+    
+    [photoWindows addObject:w];
+    
+    NSLog(@"got a best");
+    
+}
+- (void) makeRectArray:(NSArray*) windows {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        windowRects = [[NSMutableArray alloc] initWithCapacity:[windows count]];
+        photoWindows = [[NSMutableArray alloc] initWithCapacity:[windows count]];
+    });
+    [windowRects removeAllObjects];
+    for (NSDictionary * w in windows) {
+        if ([[w objectForKey:@"windowLevel"] intValue] >= 0 &&
+            ![[[[w objectForKey:@"applicationName"] componentsSeparatedByString:@" "] objectAtIndex:0] isEqualToString:@"Dock"] &&
+            ![[[[w objectForKey:@"applicationName"] componentsSeparatedByString:@" "] objectAtIndex:0] isEqualToString:@"SonOfGrab"]
+
+            ) {
+            int x = [[[[w objectForKey:@"windowOrigin"] componentsSeparatedByString:@"/"] objectAtIndex:0]intValue];
+            int y = [[[[w objectForKey:@"windowOrigin"] componentsSeparatedByString:@"/"] objectAtIndex:1]intValue];
+            int width = [[[[w objectForKey:@"windowSize"] componentsSeparatedByString:@"*"] objectAtIndex:0]intValue];
+            int height = [[[[w objectForKey:@"windowSize"] componentsSeparatedByString:@"*"] objectAtIndex:1]intValue];
+            NSRect r = NSRectFromCGRect(CGRectMake(x, y, width, height));
+            [windowRects addObject:[NSValue valueWithRect:r]];
+            NSLog(@"Window %@", w);
+
+        }
+    }
+}
+
+
 -(void)updateWindowList
 {
 	// Ask the window server for the list of windows.
@@ -184,8 +328,23 @@ void WindowListApplierFunction(const void *inputDictionary, void *context)
 	CFArrayApplyFunction(windowList, CFRangeMake(0, CFArrayGetCount(windowList)), &WindowListApplierFunction, &data);
 	CFRelease(windowList);
 	
+    [self makeRectArray:prunedWindowList];
+    NSArray * toremove = [photoWindows copy];
+    [photoWindows removeAllObjects];
+    [self checkForFreeSpace];
+    [self checkForFreeSpace];
+    [self checkForFreeSpace];
+    [self checkForFreeSpace];
+    for (NSWindow * w in toremove) {
+        [w close];
+    }
 	// Set the new window list
 	[arrayController setContent:prunedWindowList];
+    double delayInSeconds = 15.0;
+    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
+    dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
+        [self updateWindowList];
+    });
 }
 
 -(CFArrayRef)newWindowListFromSelection:(NSArray*)selection
