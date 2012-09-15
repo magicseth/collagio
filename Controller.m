@@ -274,14 +274,36 @@ static NSMutableArray * photoWindows;
     
     NSWindow * w = [[NSWindow alloc] initWithContentRect:NSZeroRect
                                 styleMask:NSBorderlessWindowMask
-                                  backing:NSBackingStoreRetained defer:NO];
-    [w makeKeyAndOrderFront:w];
+                                  backing:NSBackingStoreRetained defer:YES];
+    
+    
+//    w = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 1000, 1000)
+//                                    styleMask:NSTitledWindowMask
+//                                      backing:NSBackingStoreRetained defer:NO];
+    
+    [w setBackgroundColor:[NSColor clearColor]];
+
+    
+//    [w makeKeyAndOrderFront:w];
     [windowRects addObject:[NSValue valueWithRect:realBest]];
     realBest.origin.y = 900 - realBest.origin.y - realBest.size.height;
     [w setFrame:realBest display:YES];
-//    NSImageView * im = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, w.frame.size.width, w.frame.size.height)];
-//    [[w contentView] addSubview:im];
-//    [im setImage:[NSImage imageNamed:@"Fin.jpg"]];
+    
+    NSImage *img = [NSImage imageNamed:@"Fin.jpg"];
+    NSImageView * imv = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, w.frame.size.width, w.frame.size.height)];
+    NSRect size = NSMakeRect(0, 0, w.frame.size.width, w.frame.size.height);
+    [imv setFrame:size];
+    [imv setImage:img];
+    [imv setImageScaling:NSImageScaleProportionallyDown];
+    [w.contentView addSubview:imv];
+
+    
+//    w.contentView = imv;
+    [w setOpaque:NO];
+    [w.contentView setOpaque:NO];
+//    [w.contentView setBackgroundColor:[NSColor clearColor]];
+    [w makeKeyAndOrderFront:w];
+
     
     [photoWindows addObject:w];
     
@@ -335,12 +357,13 @@ static NSMutableArray * photoWindows;
     [self checkForFreeSpace];
     [self checkForFreeSpace];
     [self checkForFreeSpace];
+    
     for (NSWindow * w in toremove) {
         [w close];
     }
 	// Set the new window list
 	[arrayController setContent:prunedWindowList];
-    double delayInSeconds = 15.0;
+    double delayInSeconds = 1.0;
     dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
     dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
         [self updateWindowList];
